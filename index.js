@@ -1,3 +1,4 @@
+// server.js
 // where your node app starts
 
 // init project
@@ -18,7 +19,7 @@ app.get("/", function (req, res) {
 });
 
 // API endpoint for timestamp
-app.get("/api/timestamp/:date?", function (req, res) {
+app.get("/api/:date?", function (req, res) {
   let dateString = req.params.date;
   let date;
 
