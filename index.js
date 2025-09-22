@@ -18,32 +18,17 @@ app.get("/", function (req, res) {
   res.sendFile(__dirname + '/views/index.html');
 });
 
-// API endpoint for timestamp
-app.get("/api/:date?", function (req, res) {
-  let dateString = req.params.date;
-  let date;
-
-  if (!dateString) {
-    // No date provided, use current time
-    date = new Date();
-  } else {
-    // Check if it's a valid Unix timestamp (all digits)
-    if (/^\d+$/.test(dateString)) {
-      date = new Date(parseInt(dateString));
-    } else {
-      // Otherwise, parse as date string
-      date = new Date(dateString);
-    }
-  }
-
-  if (isNaN(date.getTime())) {
-    res.json({ error: "Invalid Date" });
-  } else {
-    res.json({
-      unix: date.getTime(),
-      utc: date.toUTCString()
-    });
-  }
+// API endpoint
+app.get("/api/whoami", function (req, res) {
+  const ipaddress = req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0] : req.ip;
+  const language = req.headers['accept-language'];
+  const software = req.headers['user-agent'];
+  
+  res.json({
+    ipaddress,
+    language,
+    software
+  });
 });
 
 // listen for requests :)
