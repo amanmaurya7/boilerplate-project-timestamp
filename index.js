@@ -4,6 +4,9 @@
 // init project
 const express = require('express');
 const app = express();
+const bodyParser = require('body-parser');
+const dns = require('dns');
+const url = require('url');
 
 // enable CORS[](https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
 // so that your API is remotely testable by FCC 
@@ -13,22 +16,64 @@ app.use(cors({optionsSuccessStatus: 200}));  // some legacy browsers choke on 20
 // http://expressjs.com/en/starter/static-files.html
 app.use(express.static('public'));
 
+// Parse POST bodies
+app.use(bodyParser.urlencoded({ extended: false }));
+
+// Simple in-memory storage for URLs
+const urlDatabase = [];
+urlDatabase.push(null); // Make index start from 1
+
 // http://expressjs.com/en/starter/basic-routing.html
 app.get("/", function (req, res) {
   res.sendFile(__dirname + '/views/index.html');
 });
 
-// API endpoint
-app.get("/api/whoami", function (req, res) {
-  const ipaddress = req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0] : req.ip;
-  const language = req.headers['accept-language'];
-  const software = req.headers['user-agent'];
-  
-  res.json({
-    ipaddress,
-    language,
-    software
+// API endpoint for shortening URL
+app.post("/api/shorturl", function (req, res) {
+  const originalUrl = req.body.url;
+
+  if (!originalUrl) {
+    return res.json({ error: 'invalid url' });
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(originalUrl);
+  } catch (e) {
+    return res.json({ error: 'invalid url' });
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return res.json({ error: 'invalid url' });
+  }
+
+  dns.lookup(parsedUrl.hostname, (err) => {
+    if (err) {
+      return res.json({ error: 'invalid url' });
+    }
+
+    // Check if URL already exists
+    let shortUrl = urlDatabase.indexOf(originalUrl);
+    if (shortUrl === -1) {
+      shortUrl = urlDatabase.push(originalUrl) - 1;
+    }
+
+    res.json({
+      original_url: originalUrl,
+      short_url: shortUrl
+    });
   });
+});
+
+// Redirect endpoint
+app.get("/api/shorturl/:short_url", function (req, res) {
+  const shortUrl = parseInt(req.params.short_url);
+
+  if (isNaN(shortUrl) || shortUrl < 1 || shortUrl >= urlDatabase.length || !urlDatabase[shortUrl]) {
+    return res.json({ error: 'invalid url' });
+  }
+
+  res.redirect(urlDatabase[shortUrl]);
 });
 
 // listen for requests :)
