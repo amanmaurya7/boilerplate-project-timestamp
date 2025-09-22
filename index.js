@@ -11,7 +11,7 @@ const url = require('url');
 // enable CORS[](https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
 // so that your API is remotely testable by FCC 
 const cors = require('cors');
-app.use(cors({optionsSuccessStatus: 200}));  // some legacy browsers choke on 204
+app.use(cors({ optionsSuccessStatus: 200 }));  // some legacy browsers choke on 204
 
 // http://expressjs.com/en/starter/static-files.html
 app.use(express.static('public'));
@@ -32,6 +32,7 @@ app.get("/", function (req, res) {
 app.post("/api/shorturl", function (req, res) {
   const originalUrl = req.body.url;
 
+  // Check if URL is provided
   if (!originalUrl) {
     return res.json({ error: 'invalid url' });
   }
@@ -43,10 +44,12 @@ app.post("/api/shorturl", function (req, res) {
     return res.json({ error: 'invalid url' });
   }
 
+  // Check for http or https protocol
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
     return res.json({ error: 'invalid url' });
   }
 
+  // Validate domain with dns.lookup
   dns.lookup(parsedUrl.hostname, (err) => {
     if (err) {
       return res.json({ error: 'invalid url' });
