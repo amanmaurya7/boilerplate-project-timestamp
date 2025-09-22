@@ -4,82 +4,149 @@
 // init project
 const express = require('express');
 const app = express();
-const bodyParser = require('body-parser');
-const dns = require('dns');
-const url = require('url');
-
-// enable CORS[](https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
-// so that your API is remotely testable by FCC 
 const cors = require('cors');
-app.use(cors({ optionsSuccessStatus: 200 }));  // some legacy browsers choke on 204
+const mongoose = require('mongoose');
+const bodyParser = require('body-parser');
 
-// http://expressjs.com/en/starter/static-files.html
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+
+// Schemas
+const { Schema } = mongoose;
+
+const userSchema = new Schema({
+  username: { type: String, required: true }
+});
+
+const exerciseSchema = new Schema({
+  userId: { type: String, required: true },
+  description: { type: String, required: true },
+  duration: { type: Number, required: true },
+  date: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+const Exercise = mongoose.model('Exercise', exerciseSchema);
+
+// Middleware
+app.use(cors({ optionsSuccessStatus: 200 }));
 app.use(express.static('public'));
-
-// Parse POST bodies
 app.use(bodyParser.urlencoded({ extended: false }));
 
-// Simple in-memory storage for URLs
-const urlDatabase = [];
-urlDatabase.push(null); // Make index start from 1
-
-// http://expressjs.com/en/starter/basic-routing.html
-app.get("/", function (req, res) {
+app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html');
 });
 
-// API endpoint for shortening URL
-app.post("/api/shorturl", function (req, res) {
-  const originalUrl = req.body.url;
-
-  // Check if URL is provided
-  if (!originalUrl) {
-    return res.json({ error: 'invalid url' });
-  }
-
-  let parsedUrl;
+// Create user
+app.post('/api/users', async (req, res) => {
   try {
-    parsedUrl = new URL(originalUrl);
-  } catch (e) {
-    return res.json({ error: 'invalid url' });
-  }
+    const { username } = req.body;
+    if (!username) return res.status(400).send('Username is required');
 
-  // Check for http or https protocol
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return res.json({ error: 'invalid url' });
+    const user = new User({ username });
+    await user.save();
+    res.json({ username: user.username, _id: user._id });
+  } catch (err) {
+    res.status(500).send('Server error');
   }
+});
 
-  // Validate domain with dns.lookup
-  dns.lookup(parsedUrl.hostname, (err) => {
-    if (err) {
-      return res.json({ error: 'invalid url' });
+// Get all users
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await User.find().select('_id username');
+    res.json(users);
+  } catch (err) {
+    res.status(500).send('Server error');
+  }
+});
+
+// Add exercise
+app.post('/api/users/:_id/exercises', async (req, res) => {
+  try {
+    const { _id } = req.params;
+    let { description, duration, date } = req.body;
+
+    const user = await User.findById(_id);
+    if (!user) return res.status(404).send('User not found');
+
+    duration = parseInt(duration);
+    if (isNaN(duration)) return res.status(400).send('Invalid duration');
+
+    let exerciseDate;
+    if (date) {
+      exerciseDate = new Date(date);
+      if (isNaN(exerciseDate.getTime())) return res.status(400).send('Invalid date');
+    } else {
+      exerciseDate = new Date();
     }
 
-    // Check if URL already exists
-    let shortUrl = urlDatabase.indexOf(originalUrl);
-    if (shortUrl === -1) {
-      shortUrl = urlDatabase.push(originalUrl) - 1;
-    }
+    const exercise = new Exercise({
+      userId: _id,
+      description,
+      duration,
+      date: exerciseDate
+    });
+    await exercise.save();
 
     res.json({
-      original_url: originalUrl,
-      short_url: shortUrl
+      username: user.username,
+      description,
+      duration,
+      date: exerciseDate.toDateString(),
+      _id: user._id
     });
-  });
-});
-
-// Redirect endpoint
-app.get("/api/shorturl/:short_url", function (req, res) {
-  const shortUrl = parseInt(req.params.short_url);
-
-  if (isNaN(shortUrl) || shortUrl < 1 || shortUrl >= urlDatabase.length || !urlDatabase[shortUrl]) {
-    return res.json({ error: 'invalid url' });
+  } catch (err) {
+    res.status(500).send('Server error');
   }
-
-  res.redirect(urlDatabase[shortUrl]);
 });
 
-// listen for requests :)
-const listener = app.listen(process.env.PORT || 3000, function () {
+// Get logs
+app.get('/api/users/:_id/logs', async (req, res) => {
+  try {
+    const { _id } = req.params;
+    const { from, to, limit } = req.query;
+
+    const user = await User.findById(_id);
+    if (!user) return res.status(404).send('User not found');
+
+    let query = Exercise.find({ userId: _id });
+
+    if (from) {
+      const fromDate = new Date(from);
+      if (!isNaN(fromDate.getTime())) query = query.where('date').gte(fromDate);
+    }
+
+    if (to) {
+      const toDate = new Date(to);
+      if (!isNaN(toDate.getTime())) query = query.where('date').lte(toDate);
+    }
+
+    if (limit) {
+      const limitNum = parseInt(limit);
+      if (!isNaN(limitNum)) query = query.limit(limitNum);
+    }
+
+    const exercises = await query.exec();
+
+    const log = exercises.map(ex => ({
+      description: ex.description,
+      duration: ex.duration,
+      date: ex.date.toDateString()
+    }));
+
+    res.json({
+      username: user.username,
+      count: exercises.length,
+      _id: user._id,
+      log
+    });
+  } catch (err) {
+    res.status(500).send('Server error');
+  }
+});
+
+// Listen for requests
+const listener = app.listen(process.env.PORT || 3000, () => {
   console.log('Your app is listening on port ' + listener.address().port);
 });
